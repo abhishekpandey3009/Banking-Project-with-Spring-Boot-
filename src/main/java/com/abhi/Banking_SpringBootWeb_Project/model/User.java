@@ -20,7 +20,7 @@ public class User {
     private String name;
 
     @Column(name = "mobile_no" , unique = true)
-    private long mobileNo;
+    private String mobileNo;
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;

@@ -29,9 +29,9 @@ public class UserController {
 
     @PostMapping("/user/login")
     public ResponseEntity<?> userLogin(@RequestBody User user){
-        User user1 = userService.userLogin(user);
-        if(user1 != null){
-            return new ResponseEntity<>(user1 , HttpStatus.OK);
+        String token = userService.userLogin(user);
+        if(token != null){
+            return new ResponseEntity<>(token , HttpStatus.OK);
         }else{
             return new ResponseEntity<>("User Login Failed" , HttpStatus.NOT_FOUND);
         }
@@ -49,7 +49,7 @@ public class UserController {
     }
 
     @GetMapping("/user/mobile_no/{mobile_no}")
-    public ResponseEntity<String> checkUserByMobileNo(@PathVariable long mobile_no){
+    public ResponseEntity<String> checkUserByMobileNo(@PathVariable String mobile_no){
         User user = userService.checkuserByMobileNo(mobile_no);
         if(user != null){
             return new ResponseEntity<>("User Found" , HttpStatus.FOUND);
@@ -60,12 +60,17 @@ public class UserController {
 
     @PutMapping("/user")
     public ResponseEntity<String> updateUser(@RequestBody User user){
-        User user1 = userService.updateUser(user);
-        if(user1 != null){
-            return new ResponseEntity<>("Updated Successfully" , HttpStatus.OK);
-        }else{
-            return new ResponseEntity<>("Updation Failed" , HttpStatus.BAD_REQUEST);
+        if (user.getUser_id() == null) {
+            return new ResponseEntity<>("user_id is required for update", HttpStatus.BAD_REQUEST);
         }
+
+        User existing = userService.getUserById(user.getUser_id());
+        if (existing == null) {
+            return new ResponseEntity<>("User does not exist", HttpStatus.NOT_FOUND);
+        }
+
+        userService.updateUser(user);
+        return new ResponseEntity<>("Updated Successfully", HttpStatus.OK);
     }
 
     @DeleteMapping("/user")
