@@ -1,142 +1,199 @@
-# Banking REST API
+# Banking Spring Boot Web Project (JWT Secured)
 
-A Spring Boot backend for a simple banking application — user
-registration/login, account management, and balance operations
-(credit and withdraw), backed by MySQL via Spring Data JPA.
+A REST API for a simple banking system built with **Spring Boot**, **Spring Security**, **Spring Data JPA**, and **JWT** authentication. Users can register, log in, and manage a linked bank account (credit, debit, and transfer funds).
 
 ## Features
 
-- User registration, login, update, and delete
-- Passwords hashed with BCrypt (`spring-security-crypto`) — never
-  stored or returned in plaintext
-- One account created automatically per user (`User` ↔ `Account`,
-  1:1, sharing a primary key via JPA's `@MapsId`)
-- Credit money into an account
-- Withdraw money from an account, with an overdraft guard (rejects
-  a withdrawal that would take the balance below zero)
-- Look up an account by user id or by account number
-- CORS enabled for a separate-origin frontend
-- Unit tests (JUnit 5 + Mockito) for the service layer, covering
-  credit/withdraw edge cases and login success/failure
+- User registration and login with **BCrypt**-hashed passwords
+- **Stateless JWT authentication** — no server-side sessions
+- One bank account automatically created per user on registration
+- Credit, debit, and peer-to-peer transfer between accounts
+- Update and delete user records
+- Route-level authorization: registration and login are public, everything else requires a valid token
 
-**In progress:** transferring money between two accounts
-(`sender_account_no` / `receiver_account_no` style transfer). Not
-yet wired up end-to-end.
-
-## Tech stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Language | Java |
-| Framework | Spring Boot |
-| Data access | Spring Data JPA (Hibernate) |
-| Database | MySQL |
-| Security | Spring Security Crypto (BCrypt) |
+| Language | Java 21 |
+| Framework | Spring Boot 4.1.1 |
+| Security | Spring Security, JJWT 0.13.0 |
+| Persistence | Spring Data JPA, MySQL |
 | Build tool | Maven |
 | Testing | JUnit 5, Mockito |
 
-## Architecture
-
-Standard layered structure:
+## Project Structure
 
 ```
-controller/   → HTTP concerns: request mapping, status codes
-service/      → business logic (credit/debit rules, password hashing/verification)
-repository/   → Spring Data JPA interfaces
-model/        → JPA entities (User, Account)
-dto/          → request bodies decoupled from entities (e.g. AmountRequest)
-config/       → CORS config, PasswordEncoder bean
+src/main/java/com/abhi/Banking_SpringBootWeb_Project
+├── config
+│   ├── SecurityConfig.java     # Security filter chain, auth provider, auth manager
+│   ├── JWTFilter.java          # Intercepts requests, validates Bearer tokens
+│   └── PasswordConfig.java     # PasswordEncoder bean (BCrypt)
+├── controller
+│   ├── UserController.java     # /api/user endpoints
+│   └── AccountController.java  # /api/account endpoints
+├── dto
+│   ├── AmountRequest.java      # credit/withdraw payload
+│   └── TransactionRequest.java # transfer payload
+├── model
+│   ├── User.java
+│   ├── UserPrincipal.java      # Spring Security UserDetails wrapper
+│   └── Account.java
+├── repository
+│   ├── UserRepo.java
+│   └── AccountRepo.java
+└── service
+    ├── UserService.java
+    ├── AccountService.java
+    ├── MyUserService.java       # UserDetailsService implementation
+    └── JWTService.java          # Token generation / validation
 ```
 
-Entities are kept separate from API request bodies on purpose —
-credit/withdraw take a dedicated `AmountRequest` DTO rather than
-the `Account` entity itself, so the API contract doesn't shift
-every time the database schema does.
+## Getting Started
 
-## API endpoints
+### Prerequisites
+- Java 21
+- Maven
+- MySQL running locally (or update the datasource URL for your setup)
+
+### 1. Clone and configure the database
+
+Create a schema matching `spring.datasource.url` in `application.properties`, or edit that value to point at your own database. `spring.jpa.hibernate.ddl-auto=update` will create/update tables automatically on startup.
+
+### 2. Configure the JWT secret
+
+`application.properties` ships with a placeholder:
+```properties
+jwt.secret = //the secret key should be defined here
+```
+This is intentional — the real secret should **never** be committed. Generate a 256-bit Base64 key locally:
+```bash
+openssl rand -base64 32
+```
+Then supply it one of two ways (don't paste it into the tracked `application.properties`):
+
+**Option A — local profile (gitignored):**
+Create `src/main/resources/application-local.properties`:
+```properties
+jwt.secret=<your-generated-key>
+```
+Add it to `.gitignore`, then run with:
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+**Option B — environment variable:**
+```properties
+jwt.secret=${JWT_SECRET}
+```
+```bash
+export JWT_SECRET=<your-generated-key>
+mvn spring-boot:run
+```
+
+### 3. Run the application
+```bash
+mvn spring-boot:run
+```
+The API starts on `http://localhost:8080`.
+
+### 4. Run the tests
+```bash
+mvn test
+```
+
+## API Endpoints
 
 ### User
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/user` | Register a new user (also creates their account) |
-| POST | `/api/user/login` | Log in with name, mobile number, and password |
-| PUT | `/api/user` | Update a user's details |
-| DELETE | `/api/user` | Delete a user |
+| Method | Endpoint | Auth required | Description |
+|---|---|---|---|
+| POST | `/api/user` | No | Register a new user (also creates a linked account) |
+| POST | `/api/user/login` | No | Log in with `mobileNo` + `password`, returns a JWT |
+| GET | `/api/user/id/{id}` | Yes | Check if a user exists by id |
+| GET | `/api/user/mobile_no/{mobile_no}` | Yes | Check if a user exists by mobile number |
+| PUT | `/api/user` | Yes | Update name / mobile number / password (send `user_id`) |
+| DELETE | `/api/user` | Yes | Delete a user and their linked account |
 
 ### Account
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/account/user/{userId}` | Get the account belonging to a user |
-| GET | `/api/account/balance/{accountNo}` | Get an account by its account number |
-| PUT | `/api/account/credit` | Credit money into an account |
-| PUT | `/api/account/withdraw` | Withdraw money from an account |
+| Method | Endpoint | Auth required | Description |
+|---|---|---|---|
+| GET | `/api/account/user/{userId}` | Yes | Get account details by user id |
+| PUT | `/api/account/credit` | Yes | Credit an amount to an account |
+| PUT | `/api/account/withdraw` | Yes | Debit an amount from an account |
+| POST | `/api/account/transaction` | Yes | Transfer between two accounts |
 
-Credit/withdraw request body:
+### Authentication
+
+Include the token returned from `/api/user/login` on every protected request:
+```
+Authorization: Bearer <token>
+```
+Tokens are valid for **30 minutes**.
+
+### Sample requests
+
+**Register**
 ```json
+POST /api/user
+{
+  "name": "Jane Doe",
+  "mobileNo": "9998887777",
+  "password": "secret123"
+}
+```
+
+**Login**
+```json
+POST /api/user/login
+{
+  "mobileNo": "9998887777",
+  "password": "secret123"
+}
+```
+
+**Update**
+```json
+PUT /api/user
+{
+  "user_id": 1,
+  "name": "Jane D.",
+  "mobileNo": "9998887777"
+}
+```
+Omit `password` to leave it unchanged.
+
+**Credit**
+```json
+PUT /api/account/credit
 {
   "accountNo": 100001,
   "amount": 500.00
 }
 ```
 
-## Getting started
-
-### Prerequisites
-- Java 17+ (or whatever JDK version this project targets)
-- Maven
-- A running MySQL instance
-
-### Configure the database
-
-Edit `src/main/resources/application.properties` with your local
-MySQL credentials:
-
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/<your_db_name>
-spring.datasource.username=<your_username>
-spring.datasource.password=<your_password>
-spring.jpa.hibernate.ddl-auto=update
+**Transfer**
+```json
+POST /api/account/transaction
+{
+  "senderAccountNo": 100001,
+  "receiverAccountNo": 100002,
+  "amount": 250.00
+}
 ```
 
-> Don't commit real credentials — use environment variables or a
-> local, git-ignored properties file for anything beyond your own
-> machine.
+## Security Notes
 
-### Run it
+- Login identifier is **mobile number**, not name, since it's the field enforced as `unique` in the database.
+- Passwords are hashed with BCrypt before being stored — plaintext passwords are never persisted.
+- The JWT signing key is loaded from configuration (`jwt.secret`), not generated at runtime, so restarting the application does not invalidate existing tokens.
+- Sessions are stateless (`SessionCreationPolicy.STATELESS`) — all authorization happens via the bearer token on each request.
 
-```bash
-./mvnw spring-boot:run
-```
+## Possible Future Improvements
 
-The API starts on `http://localhost:8080` by default.
-
-### Run the tests
-
-```bash
-./mvnw test
-```
-
-## Security notes
-
-- Passwords are hashed with BCrypt before being saved, and are
-  never included in any JSON response (`User.password` is
-  write-only).
-- There is currently no authentication token (JWT/session) — every
-  endpoint is open once CORS allows the request through. This is
-  fine for local development but would need addressing before any
-  real deployment.
-
-## Roadmap
-
-- [ ] Transfer money between two accounts
-- [ ] JWT-based authentication
-- [ ] Request validation (`@Valid` / `@NotNull` on DTOs)
-- [ ] Global exception handling (`@ControllerAdvice`)
-- [ ] Wrap multi-step balance operations in `@Transactional`
-
-## Frontend
-
-A React frontend that consumes this API is maintained in a
-separate repository.
+- Move to a dedicated update DTO instead of accepting the full `User` entity on `PUT /api/user`
+- Add refresh tokens so users aren't forced to re-login every 30 minutes
+- Add transaction history / an audit log table
+- Add global exception handling (`@ControllerAdvice`) for consistent error responses
